@@ -94,6 +94,7 @@ python-dotenv
 
 
 six
+PyQt6; sys_platform != "win32"
 kafka-python-ng
 
 # ======================================================
