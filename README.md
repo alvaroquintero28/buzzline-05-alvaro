@@ -1,4 +1,4 @@
-# buzzline-05-case
+# buzzline-05-alvaro
 
 Nearly every streaming analytics system stores processed data somewhere for further analysis, historical reference, or integration with BI tools.
 
@@ -38,8 +38,12 @@ Use your README.md to record your workflow and commands.
 
 Follow the instructions in [MANAGE-VENV.md](https://github.com/denisecase/buzzline-01-case/docs/MANAGE-VENV.md) to:
 1. Create your .venv
+python3 -m venv .venv
 2. Activate .venv
+source .venv/bin/activate
 3. Install the required dependencies using requirements.txt.
+python3 -m pip install --upgrade pip setuptools wheel
+python3 -m pip install --upgrade -r requirements.txt
 
 ## Task 4. Start Zookeeper and Kafka (Takes 2 Terminals)
 
@@ -47,7 +51,13 @@ If Zookeeper and Kafka are not already running, you'll need to restart them.
 See instructions at [SETUP-KAFKA.md] to:
 
 1. Start Zookeeper Service ([link](https://github.com/denisecase/buzzline-02-case/blob/main/docs/SETUP-KAFKA.md#step-7-start-zookeeper-service-terminal-1))
+cd ~/kafka
+chmod +x zookeeper-server-start.sh
+bin/zookeeper-server-start.sh config/zookeeper.properties
 2. Start Kafka Service ([link](https://github.com/denisecase/buzzline-02-case/blob/main/docs/SETUP-KAFKA.md#step-8-start-kafka-terminal-2))
+cd ~/kafka
+chmod +x kafka-server-start.sh
+bin/kafka-server-start.sh config/server.properties
 
 ---
 
@@ -68,13 +78,6 @@ For configuration details, see the .env file.
 In VS Code, open a NEW terminal.
 Use the commands below to activate .venv, and start the producer. 
 
-Windows:
-
-```shell
-.venv\Scripts\activate
-py -m producers.producer_case
-```
-
 Mac/Linux:
 ```zsh
 source .venv/bin/activate
@@ -92,14 +95,6 @@ You have two options.
 
 In VS Code, open a NEW terminal in your root project folder. 
 Use the commands below to activate .venv, and start the consumer. 
-
-Windows:
-```shell
-.venv\Scripts\activate
-py -m consumers.kafka_consumer_case
-OR
-py -m consumers.file_consumer_case
-```
 
 Mac/Linux:
 ```zsh
