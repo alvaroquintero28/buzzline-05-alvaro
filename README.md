@@ -38,12 +38,18 @@ Use your README.md to record your workflow and commands.
 
 Follow the instructions in [MANAGE-VENV.md](https://github.com/denisecase/buzzline-01-case/docs/MANAGE-VENV.md) to:
 1. Create your .venv
+```zsh
 python3 -m venv .venv
-2. Activate .venv
+```
+1. Activate .venv
+```zsh
 source .venv/bin/activate
-3. Install the required dependencies using requirements.txt.
+```
+1. Install the required dependencies using requirements.txt.
+```zsh
 python3 -m pip install --upgrade pip setuptools wheel
 python3 -m pip install --upgrade -r requirements.txt
+```
 
 ## Task 4. Start Zookeeper and Kafka (Takes 2 Terminals)
 
@@ -51,14 +57,17 @@ If Zookeeper and Kafka are not already running, you'll need to restart them.
 See instructions at [SETUP-KAFKA.md] to:
 
 1. Start Zookeeper Service ([link](https://github.com/denisecase/buzzline-02-case/blob/main/docs/SETUP-KAFKA.md#step-7-start-zookeeper-service-terminal-1))
+```zsh
 cd ~/kafka
 chmod +x zookeeper-server-start.sh
 bin/zookeeper-server-start.sh config/zookeeper.properties
-2. Start Kafka Service ([link](https://github.com/denisecase/buzzline-02-case/blob/main/docs/SETUP-KAFKA.md#step-8-start-kafka-terminal-2))
+```
+1. Start Kafka Service ([link](https://github.com/denisecase/buzzline-02-case/blob/main/docs/SETUP-KAFKA.md#step-8-start-kafka-terminal-2))
+```zsh
 cd ~/kafka
 chmod +x kafka-server-start.sh
 bin/kafka-server-start.sh config/server.properties
-
+```
 ---
 
 ## Task 5. Start a New Streaming Application
