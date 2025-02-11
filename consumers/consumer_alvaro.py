@@ -1,219 +1,175 @@
-import logging
-import sqlite3
-import os
-import pathlib
-import datetime
-import pandas as pd
-import json
+#####################################
+# Import Modules
+#####################################
 
+# import from standard library
+import json
+import pathlib
+import sys
+import time
+
+# import from local modules
 import utils.utils_config as config
 from utils.utils_logger import logger
+from pymongo import MongoClient, errors
 
 
 #####################################
-# Define Function to Initialize SQLite Database
+# Function to process a single message
 #####################################
 
-def init_db(db_path: pathlib.Path):
-    logger.info(f"Calling SQLite init_db() with {db_path=}.")
+
+def process_message(message: str) -> None:
+    """
+    Process and transform a single JSON message.
+    Converts message fields to appropriate data types.
+
+    Args:
+        message (str): The JSON message as a string.
+    """
     try:
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            logger.info("SUCCESS: Got a cursor to execute SQL.")
-            conn.execute("BEGIN TRANSACTION")
-            cursor.execute("DROP TABLE IF EXISTS streamed_messages;")
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS streamed_messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    message TEXT,
-                    author TEXT,
-                    timestamp TEXT,
-                    category TEXT,
-                    sentiment REAL,
-                    keyword_mentioned TEXT,
-                    message_length INTEGER
-                )
-            """
-            )
-            conn.commit()
-        logger.info(f"SUCCESS: Database initialized and table ready at {db_path}.")
+        processed_message = {
+            "message": message.get("message"),
+            "author": message.get("author"),
+            "timestamp": message.get("timestamp"),
+            "category": message.get("category"),
+            "sentiment": float(message.get("sentiment", 0.0)),
+            "keyword_mentioned": message.get("keyword_mentioned"),
+            "message_length": int(message.get("message_length", 0)),
+        }
+        logger.info(f"Processed message: {processed_message}")
+        return processed_message
     except Exception as e:
-        logger.exception(f"ERROR: Failed to initialize a sqlite database at {db_path}: {e}")
+        logger.error(f"Error processing message: {e}")
+        return None
 
 
 #####################################
-# Define Function to Insert a Processed Message into the Database
+# Consume Messages from Live Data File
 #####################################
 
-def insert_message(message: dict, db_path: pathlib.Path) -> None:
-    logger.info("Calling SQLite insert_message() with:")
-    logger.info(f"{message=}")
-    logger.info(f"{db_path=}")
 
-    STR_PATH = str(db_path)
-    try:
-        with sqlite3.connect(STR_PATH) as conn:
-            cursor = conn.cursor()
-            logger.info("Database Connection Successful")
+def consume_messages_from_file(live_data_path, mongo_uri, interval_secs, last_position):
+    """
+    Consume new messages from a file and process them.
+    Each message is expected to be JSON-formatted.
 
-            sql = """
-                    INSERT INTO streamed_messages (
-                        message, author, timestamp, category, sentiment, keyword_mentioned, message_length
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """
-            params = (
-                message.get("message", ""),
-                message.get("author", ""),
-                message.get("timestamp", ""),
-                message.get("category", ""),
-                message.get("sentiment", 0.0),
-                message.get("keyword_mentioned", ""),
-                message.get("message_length", 0),
-            )
+    Args:
+    - live_data_path (pathlib.Path): Path to the live data file.
+    - mongo_uri (str): Connection URI for MongoDB.
+    - interval_secs (int): Interval in seconds to check for new messages.
+    - last_position (int): Last read position in the file.
+    """
+    logger.info("Called consume_messages_from_file() with:")
+    logger.info(f"   {live_data_path=}")
+    logger.info(f"   {mongo_uri=}")
+    logger.info(f"   {interval_secs=}")
+    logger.info(f"   {last_position=}")
 
-            try:
-                logger.info(f"SQL command to be executed: {sql}")
-                logger.info(f"Parameters: {params}")
+    logger.info("1. Initialize the MongoDB connection.")
+    collection = init_db(mongo_uri)
 
-                cursor.execute(sql, params)
-                conn.commit()
-                last_row_id = cursor.lastrowid
-                logger.info(f"Inserted one message into the database. Last row ID: {last_row_id}")
-                logger.info("Verifying insertion by checking table contents")
-                cursor.execute("SELECT * FROM streamed_messages")
-                rows = cursor.fetchall()
-                for row in rows:
-                    logger.info(f"Row: {row}")
-            except sqlite3.IntegrityError as e:
-                logger.error(f"IntegrityError during insertion: {e}")
-            except sqlite3.OperationalError as e:
-                logger.error(f"OperationalError during insertion: {e}")
-            except Exception as e:
-                logger.exception(f"Unexpected error during insertion: {e}")
-    except sqlite3.OperationalError as e:
-        logger.exception(f"Error connecting to the database: {e}")
-    except Exception as e:
-        logger.exception(f"An unexpected error occurred: {e}")
+    logger.info("2. Set the last position to 0 to start at the beginning of the file.")
+    last_position = 0
 
+    while True:
+        try:
+            logger.info(f"3. Read from live data file at position {last_position}.")
+            with open(live_data_path, "r") as file:
+                # Move to the last read position
+                file.seek(last_position)
+                for line in file:
+                    # If we strip whitespace and there is content
+                    if line.strip():
 
+                        # Use json.loads to parse the stripped line
+                        message = json.loads(line.strip())
 
-#####################################
-# Define Function to Delete a Message from the Database
-#####################################
+                        # Call our process_message function
+                        processed_message = process_message(message)
 
-def delete_message(message_id: int, db_path: pathlib.Path) -> None:
-    STR_PATH = str(db_path)
-    try:
-        with sqlite3.connect(STR_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM streamed_messages WHERE id = ?", (message_id,))
-            conn.commit()
-        logger.info(f"Deleted message with id {message_id} from the database.")
-    except Exception as e:
-        logger.error(f"ERROR: Failed to delete message from the database: {e}")
+                        # If we have a processed message, insert it into the database
+                        if processed_message:
+                            insert_message(processed_message, collection)
+
+                # Update the last position that's been read to the current file position
+                last_position = file.tell()
+
+                # Return the last position to be used in the next iteration
+                return last_position
+
+        except FileNotFoundError:
+            logger.error(f"ERROR: Live data file not found at {live_data_path}.")
+            sys.exit(10)
+        except Exception as e:
+            logger.error(f"ERROR: Error reading from live data file: {e}")
+            sys.exit(11)
+
+        time.sleep(interval_secs)
 
 
 #####################################
-# Define Functions to Retrieve and Analyze Data
+# Define Main Function
 #####################################
 
-def get_all_messages(db_path: pathlib.Path) -> pd.DataFrame:
-    try:
-        conn = sqlite3.connect(str(db_path))
-        df = pd.read_sql_query("SELECT * FROM streamed_messages", conn)
-        logger.info(f"Data retrieved from database:\n{df}")
-        conn.close()
-        return df
-    except Exception as e:
-        logger.error(f"Error retrieving messages: {e}")
-        return pd.DataFrame()
-
-
-def analyze_keyword_trends(df: pd.DataFrame) -> dict:
-    keyword_counts = df.groupby('keyword_mentioned')['keyword_mentioned'].count().sort_values(ascending=False)
-    return keyword_counts.to_dict()
-
-
-def analyze_category_trends(df: pd.DataFrame) -> dict:
-    category_counts = df.groupby('category')['category'].count().sort_values(ascending=False)
-    return category_counts.to_dict()
-
-
-def analyze_author_trends(df: pd.DataFrame) -> dict:
-    author_counts = df.groupby('author')['author'].count().sort_values(ascending=False)
-    return author_counts.to_dict()
-
-
-#####################################
-# Define main() function for testing
-#####################################
 
 def main():
-    logger.info("Starting db testing.")
+    """
+    Main function to run the consumer process.
 
-    DATA_PATH = pathlib.Path(config.get_base_data_path())
-    DB_PATH_STRING = str(config.get_sqlite_path()) #Corrected line
-    TEST_DB_PATH: pathlib.Path = DATA_PATH / pathlib.Path(DB_PATH_STRING)
+    Reads configuration, initializes the database, and starts consumption.
 
-    init_db(TEST_DB_PATH)
-    logger.info(f"Initialized database file at {TEST_DB_PATH}.")
+    """
+    logger.info("Starting Consumer to run continuously.")
+    logger.info("Things can fail or get interrupted, so use a try block.")
+    logger.info("Moved .env variables into a utils config module.")
 
-    # Add multiple test messages
-    messages = [
-        {"message": "This is a test message.", "author": "User1", "timestamp": datetime.datetime.now().isoformat(), "category": "News", "sentiment": 0.5, "keyword_mentioned": "test", "message_length": 24},
-        {"message": "Another test message.", "author": "User2", "timestamp": datetime.datetime.now().isoformat(), "category": "Sports", "sentiment": 0.8, "keyword_mentioned": "sports", "message_length": 21},
-        {"message": "Yet another test!", "author": "User1", "timestamp": datetime.datetime.now().isoformat(), "category": "Tech", "sentiment": 0.2, "keyword_mentioned": "AI", "message_length": 17},
-    ]
-
-    for msg in messages:
-        insert_message(msg, TEST_DB_PATH)
-
-    test_simple_insert(TEST_DB_PATH)
-
-    # Deletion of test message (this section could be improved for more robust testing)
+    logger.info("STEP 1. Read environment variables using new config functions.")
     try:
-        with sqlite3.connect(TEST_DB_PATH, timeout=1.0) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM streamed_messages WHERE message = 'Simple Test'")
-            row = cursor.fetchone()
-            if row:
-                test_message_id = row[0]
-                delete_message(test_message_id, TEST_DB_PATH)
-            else:
-                logger.warning("Test message not found; nothing to delete.")
+        interval_secs: int = config.get_message_interval_seconds_as_int()
+        live_data_path: pathlib.Path = config.get_live_data_path()
+        mongo_uri: str = config.get_mongo_uri()
+        logger.info("SUCCESS: Read environment variables.")
     except Exception as e:
-        logger.error(f"ERROR: Failed to retrieve or delete test message: {e}")
+        logger.error(f"ERROR: Failed to read environment variables: {e}")
+        sys.exit(1)
 
 
-    df = get_all_messages(TEST_DB_PATH)
-    keyword_trends = analyze_keyword_trends(df)
-    category_trends = analyze_category_trends(df)
-    author_trends = analyze_author_trends(df)
-
-    logger.info(f"Keyword Trends: {keyword_trends}")
-    logger.info(f"Category Trends: {category_trends}")
-    logger.info(f"Author Trends: {author_trends}")
-
-    logger.info("Finished testing.")
-
-
-def test_simple_insert(db_path):
+    logger.info("STEP 4. Begin consuming and storing messages.")
     try:
-        with sqlite3.connect(str(db_path)) as conn:
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO streamed_messages (message) VALUES ('Simple Test')")
-            conn.commit()
-            logger.info("Simple test insert complete")
-            cursor.execute("SELECT COUNT(*) FROM streamed_messages")
-            count = cursor.fetchone()[0]
-            logger.info(f"Row count after simple insert {count}")
+        consume_messages_from_file(live_data_path, mongo_uri, interval_secs, 0)
+    except KeyboardInterrupt:
+        logger.warning("Consumer interrupted by user.")
     except Exception as e:
-        logger.exception(f"Error during simple insert: {e}")
+        logger.error(f"ERROR: Unexpected error: {e}")
+    finally:
+        logger.info("TRY/FINALLY: Consumer shutting down.")
 
 
+def init_db(mongo_uri):
+    """Initializes the MongoDB connection."""
+    try:
+        client = MongoClient(mongo_uri)
+        db = client["product_launch_mongodb"] # Replace with your database name
+        collection = db["messages"] # Replace with your collection name
+        return collection  # Return the collection object
+    except errors.ConnectionFailure as e:
+        logger.error(f"Could not connect to MongoDB: {e}")
+        sys.exit(1)
+
+def insert_message(message, collection):
+    """Inserts a message into the MongoDB collection."""
+    try:
+        collection.insert_one(message)
+        logger.info(f"Inserted message: {message}")
+    except errors.PyMongoError as e:
+        logger.error(f"Error inserting message: {e}")
+
+
+
+#####################################
+# Conditional Execution
+#####################################
 
 if __name__ == "__main__":
     main()
-
