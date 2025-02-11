@@ -6,10 +6,7 @@ import datetime
 import pandas as pd
 import json
 
-# PLACEHOLDER - Implement this module (see previous responses for example)
 import utils.utils_config as config
-
-# PLACEHOLDER - Implement this module to set up logging
 from utils.utils_logger import logger
 
 
@@ -157,7 +154,7 @@ def main():
     logger.info("Starting db testing.")
 
     DATA_PATH = pathlib.Path(config.get_base_data_path())
-    DB_PATH_STRING = config.get_db_path()
+    DB_PATH_STRING = str(config.get_sqlite_path()) #Corrected line
     TEST_DB_PATH: pathlib.Path = DATA_PATH / pathlib.Path(DB_PATH_STRING)
 
     init_db(TEST_DB_PATH)
@@ -219,3 +216,4 @@ def test_simple_insert(db_path):
 
 if __name__ == "__main__":
     main()
+
