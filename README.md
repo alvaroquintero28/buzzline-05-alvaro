@@ -15,6 +15,7 @@ We use SQLite, but the example could be altered to work with MySQL, PostgreSQL, 
 - Python Debugger by Microsoft
 - Ruff by Astral Software (Linter)
 - SQLite Viewer by Florian Klampfer
+- MongoDB for VSCode
 - WSL by Microsoft (on Windows Machines)
 
 ## Task 1. Use Tools from Module 1 and 2
@@ -95,12 +96,11 @@ python3 -m producers.producer_case
 
 The producer will still work if Kafka is not available.
 
-### Consumer (Terminal 4) - Two Options
+### Consumer (Terminal 4) - 
 
-Start an associated consumer. 
-You have two options. 
-1. Start the consumer that reads from the live data file.
-2. OR Start the consumer that reads from the Kafka topic.
+Start an associated consumer. This script acts as a continuous message consumer, reading JSON messages from a file, processing them, and storing them in a MongoDB database.  It periodically displays a summary table and creates a bar chart visualizing the distribution of message categories using Matplotlib, offering real-time monitoring and analysis of incoming data.  Error handling and logging are included for robustness.
+
+1. Start the consumer that reads from the Kafka topic.
 
 In VS Code, open a NEW terminal in your root project folder. 
 Use the commands below to activate .venv, and start the consumer. 
@@ -108,9 +108,7 @@ Use the commands below to activate .venv, and start the consumer.
 Mac/Linux:
 ```zsh
 source .venv/bin/activate
-python3 -m consumers.kafka_consumer_case
-OR
-python3 -m consumers.file_consumer_case
+python3 -m consumers.consumer_alvaro
 ```
 
 ---
