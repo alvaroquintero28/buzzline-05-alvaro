@@ -1,25 +1,22 @@
-#####################################
-# Import Modules
-#####################################
-
-# import from standard library
 import json
 import pathlib
 import sys
 import time
+from tabulate import tabulate
+import logging
+import matplotlib.pyplot as plt
+from collections import Counter
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # import from local modules
 import utils.utils_config as config
-from utils.utils_logger import logger
 from pymongo import MongoClient, errors
 
 
-#####################################
-# Function to process a single message
-#####################################
-
-
-def process_message(message: str) -> None:
+def process_message(message: str) -> dict:
     """
     Process and transform a single JSON message.
     Converts message fields to appropriate data types.
@@ -44,59 +41,47 @@ def process_message(message: str) -> None:
         return None
 
 
-#####################################
-# Consume Messages from Live Data File
-#####################################
-
-
 def consume_messages_from_file(live_data_path, mongo_uri, interval_secs, last_position):
     """
     Consume new messages from a file and process them.
     Each message is expected to be JSON-formatted.
 
     Args:
-    - live_data_path (pathlib.Path): Path to the live data file.
-    - mongo_uri (str): Connection URI for MongoDB.
-    - interval_secs (int): Interval in seconds to check for new messages.
-    - last_position (int): Last read position in the file.
+        live_data_path (pathlib.Path): Path to the live data file.
+        mongo_uri (str): Connection URI for MongoDB.
+        interval_secs (int): Interval in seconds to check for new messages.
+        last_position (int): Last read position in the file.
     """
     logger.info("Called consume_messages_from_file() with:")
-    logger.info(f"   {live_data_path=}")
-    logger.info(f"   {mongo_uri=}")
-    logger.info(f"   {interval_secs=}")
-    logger.info(f"   {last_position=}")
+    logger.info(f"   live_data_path={live_data_path}")
+    logger.info(f"   mongo_uri={mongo_uri}")
+    logger.info(f"   interval_secs={interval_secs}")
+    logger.info(f"   last_position={last_position}")
 
     logger.info("1. Initialize the MongoDB connection.")
     collection = init_db(mongo_uri)
 
     logger.info("2. Set the last position to 0 to start at the beginning of the file.")
     last_position = 0
+    all_messages = []
 
     while True:
         try:
             logger.info(f"3. Read from live data file at position {last_position}.")
             with open(live_data_path, "r") as file:
-                # Move to the last read position
                 file.seek(last_position)
                 for line in file:
-                    # If we strip whitespace and there is content
                     if line.strip():
-
-                        # Use json.loads to parse the stripped line
                         message = json.loads(line.strip())
-
-                        # Call our process_message function
                         processed_message = process_message(message)
-
-                        # If we have a processed message, insert it into the database
                         if processed_message:
                             insert_message(processed_message, collection)
+                            all_messages.append(processed_message)
 
-                # Update the last position that's been read to the current file position
                 last_position = file.tell()
-
-                # Return the last position to be used in the next iteration
-                return last_position
+                if all_messages:
+                    display_message_table(all_messages)
+                    all_messages = []
 
         except FileNotFoundError:
             logger.error(f"ERROR: Live data file not found at {live_data_path}.")
@@ -108,17 +93,10 @@ def consume_messages_from_file(live_data_path, mongo_uri, interval_secs, last_po
         time.sleep(interval_secs)
 
 
-#####################################
-# Define Main Function
-#####################################
-
-
 def main():
     """
     Main function to run the consumer process.
-
     Reads configuration, initializes the database, and starts consumption.
-
     """
     logger.info("Starting Consumer to run continuously.")
     logger.info("Things can fail or get interrupted, so use a try block.")
@@ -133,7 +111,6 @@ def main():
     except Exception as e:
         logger.error(f"ERROR: Failed to read environment variables: {e}")
         sys.exit(1)
-
 
     logger.info("STEP 4. Begin consuming and storing messages.")
     try:
@@ -150,12 +127,13 @@ def init_db(mongo_uri):
     """Initializes the MongoDB connection."""
     try:
         client = MongoClient(mongo_uri)
-        db = client["product_launch_mongodb"] # Replace with your database name
-        collection = db["messages"] # Replace with your collection name
-        return collection  # Return the collection object
+        db = client["product_launch_mongodb"]  # Replace with your database name
+        collection = db["messages"]  # Replace with your collection name
+        return collection
     except errors.ConnectionFailure as e:
         logger.error(f"Could not connect to MongoDB: {e}")
         sys.exit(1)
+
 
 def insert_message(message, collection):
     """Inserts a message into the MongoDB collection."""
@@ -166,10 +144,32 @@ def insert_message(message, collection):
         logger.error(f"Error inserting message: {e}")
 
 
+def display_message_table(messages):
+    """Displays a table of messages using tabulate."""
+    if messages:
+        print("\n--- Messages Processed ---\n")
+        print(tabulate(messages, headers="keys"))
+        print("--- End of Messages ---\n")
+        create_bar_chart(messages)
 
-#####################################
-# Conditional Execution
-#####################################
+
+def create_bar_chart(messages):
+    """Creates and displays a bar chart of message categories."""
+    categories = [msg['category'] for msg in messages if 'category' in msg]
+    category_counts = Counter(categories)
+
+    categories_list = list(category_counts.keys())
+    counts_list = list(category_counts.values())
+
+    plt.figure(figsize=(10, 6))  # Adjust figure size as needed
+    plt.bar(categories_list, counts_list, color='skyblue')
+    plt.xlabel("Category")
+    plt.ylabel("Number of Messages")
+    plt.title("Alvaro Quintero's Bar Chart")
+    plt.xticks(rotation=45, ha="right")  # Rotate x-axis labels for readability
+    plt.tight_layout()  # Adjust layout
+    plt.show() # Added to display the chart
+
 
 if __name__ == "__main__":
     main()
